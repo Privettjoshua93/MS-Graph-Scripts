@@ -1,0 +1,93 @@
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned
+Install-Module ExchangeOnlineManagement
+Install-Module AzureAD
+Install-Module ImportExcel
+Import-Module ExchangeOnlineManagement
+Import-Module AzureAD
+Import-Module ImportExcel
+Connect-ExchangeOnline
+Connect-AzureAD
+#Just remember to change this
+$excelPath = "C:\Users\path\Membership\MembershipData.xlsx"
+Function Export-GroupMembershipToExcel {
+    param(
+        [string]$SheetName,
+        [scriptblock]$GroupCmdlet,
+        [scriptblock]$MemberCmdlet,
+        [scriptblock]$MemberDetails,
+        [string[]]$PropertySelection
+    )
+    $GroupMembershipData = @()
+    $Groups = & $GroupCmdlet
+    foreach ($Group in $Groups) {
+        try {
+            $Members = &$MemberCmdlet $Group
+            foreach ($Member in $Members) {
+                $details = & $MemberDetails $Group $Member
+                $obj = New-Object -TypeName PSObject -Property $details
+                $GroupMembershipData += $obj
+            }
+        } catch {
+            Write-Warning "Error processing group $($Group.DisplayName): $_"
+        }
+    }
+    $GroupMembershipData | 
+        Select-Object -Property $PropertySelection |
+        Export-Excel -Path $excelPath -WorksheetName $SheetName -AutoFilter -AutoSize -ClearSheet
+}
+Export-GroupMembershipToExcel -SheetName "M365 Groups" -GroupCmdlet {
+    Get-UnifiedGroup -ResultSize Unlimited
+} -MemberCmdlet {
+    param($Group)
+    Get-UnifiedGroupLinks -Identity $Group.Identity -LinkType Members -ErrorAction SilentlyContinue
+} -MemberDetails {
+    param($Group, $Member)
+    @{
+        GroupDisplayName = $Group.DisplayName
+        GroupEmailAddress = $Group.PrimarySmtpAddress
+        MemberDisplayName = $Member.DisplayName
+        MemberPrimarySmtpAddress = $Member.PrimarySmtpAddress
+        AccessType = if($Group.AccessType -eq 'Public') { 'Public' } else { 'Private' }
+    }
+} -PropertySelection @('GroupDisplayName', 'GroupEmailAddress', 'MemberDisplayName', 'MemberPrimarySmtpAddress', 'AccessType')
+Export-GroupMembershipToExcel -SheetName "Distribution Groups" -GroupCmdlet {
+    Get-DistributionGroup -ResultSize Unlimited
+} -MemberCmdlet {
+    param($Group)
+    Get-DistributionGroupMember -Identity $Group.Identity -ErrorAction SilentlyContinue
+} -MemberDetails {
+    param($Group, $Member)
+    @{
+        GroupDisplayName = $Group.DisplayName
+        GroupEmailAddress = $Group.PrimarySmtpAddress
+        MemberDisplayName = $Member.DisplayName
+        MemberPrimarySmtpAddress = $Member.PrimarySmtpAddress
+    }
+} -PropertySelection @('GroupDisplayName', 'GroupEmailAddress', 'MemberDisplayName', 'MemberPrimarySmtpAddress')
+Export-GroupMembershipToExcel -SheetName "Dynamic Distribution Groups" -GroupCmdlet {
+    Get-DynamicDistributionGroup -ResultSize Unlimited
+} -MemberCmdlet {
+    param($Group)
+    Get-Recipient -RecipientPreviewFilter $Group.RecipientFilter -ResultSize Unlimited -ErrorAction SilentlyContinue
+} -MemberDetails {
+    param($Group, $Member)
+    @{
+        GroupDisplayName = $Group.DisplayName
+        GroupEmailAddress = $Group.PrimarySmtpAddress
+        MemberDisplayName = $Member.DisplayName
+        MemberPrimarySmtpAddress = $Member.PrimarySmtpAddress
+    }
+} -PropertySelection @('GroupDisplayName', 'GroupEmailAddress', 'MemberDisplayName', 'MemberPrimarySmtpAddress')
+Export-GroupMembershipToExcel -SheetName "Azure AD Groups" -GroupCmdlet {
+    Get-AzureADGroup -All $true | Where-Object { $_.SecurityEnabled -eq $true -and $_.MailEnabled -eq $false }
+} -MemberCmdlet {
+    param($Group)
+    Get-AzureADGroupMember -ObjectId $Group.ObjectId -All $true -ErrorAction SilentlyContinue
+} -MemberDetails {
+    param($Group, $Member)
+    @{
+        GroupDisplayName = $Group.DisplayName
+        MemberDisplayName = $Member.DisplayName
+    }
+} -PropertySelection @('GroupDisplayName', 'MemberDisplayName')
+Write-Host "Ignore warning above^^^ This guy has no idea what he's talkin about. File saved at $excelPath."

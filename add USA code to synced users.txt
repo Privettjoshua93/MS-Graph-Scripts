@@ -1,0 +1,32 @@
+# Path to the updated Excel document with corrected phone numbers
+$excelPath = "C:\Users\path\Docs\updatednumbers.xlsx"
+
+# Import data from Excel
+$users = Import-Excel -Path $excelPath
+
+foreach ($user in $users) {
+    # Find the user in AD by their display name
+    $adUser = Get-ADUser -Filter "DisplayName -eq '$($user.DisplayName)'" -Properties DisplayName, OfficePhone, MobilePhone
+    
+    if ($adUser) {
+        # Initialize a hashtable for properties to update
+        $updateParams = @{}
+
+        # Check and prepare the Phone field for update if necessary
+        if ($user.Phone -notmatch '^\+|^1' -and $user.Phone) {
+            $updateParams['OfficePhone'] = "+1 " + $user.Phone
+        }
+
+        # Check and prepare the Mobile field for update if necessary
+        if ($user.Mobile -notmatch '^\+|^1' -and $user.Mobile) {
+            $updateParams['MobilePhone'] = "+1 " + $user.Mobile
+        }
+
+        # If there are properties to update, execute the update for the user
+        if ($updateParams.Keys.Count -gt 0) {
+            Set-ADUser -Identity $adUser.DistinguishedName @updateParams
+        }
+    } else {
+       Write-Host "User with display name $($user.DisplayName) not found in AD."
+    }
+}

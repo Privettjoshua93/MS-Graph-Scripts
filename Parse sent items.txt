@@ -1,0 +1,33 @@
+#Replace these 
+$inputCsvPath = inputfilepathgoeshere
+$outputCsvPath = outputfilepathgoeshere
+
+$sentItems = Import-Csv -Path $inputCsvPath
+$uniqueContacts = @{}
+$contacts = @()
+foreach ($item in $sentItems) {
+    $toAddresses = $item.To (Address) -split ';'
+    $toNames = $item.To (Name) -split ';'
+    for ($i = 0; $i -lt $toAddresses.Length; $i++) {
+        $address = $toAddresses[$i].Trim()
+        if ($address -notmatch '^o=Exchange' -and $address -ne '' -and !$uniqueContacts.ContainsKey($address)) {
+            $nameParts = $toNames[$i].Trim() -split ' '
+            $firstName = $nameParts[0]
+            $lastName = if ($nameParts.Length -gt 1) { $nameParts[-1] } else { '' }
+            # Create a custom object for the new contact
+            $contact = [PSCustomObject]@{
+                First Name     = $firstName
+                Middle Name    = ''
+                Last Name      = $lastName
+                E-mail Address = $address
+                # Additional fields would be initialized as empty here
+            }
+            # Add the custom object to the contacts array
+            $contacts += $contact
+            # Add the email address to the hashtable to prevent duplicates
+            $uniqueContacts[$address] = $true
+        }
+    }
+}
+$contacts  Export-Csv -Path $outputCsvPath -NoTypeInformation
+Write-Host Extracted external contact names and email addresses have been saved to '$outputCsvPath'. Duplicate entries have been removed.

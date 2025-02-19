@@ -1,0 +1,41 @@
+#You have to use PowerShell 7.2
+# Install-Module -Name PnP.PowerShell -AllowClobber -Force
+# Import-Module PnP.PowerShell
+
+#Paste the Site URL here
+$siteUrl = "https://url.com"
+Connect-PnPOnline -Url $siteUrl -Interactive
+
+$ctx = Get-PnPContext
+$web = Get-PnPWeb
+$ctx.Load($web.Lists)
+$ctx.ExecuteQuery()
+
+$docLibraries = $web.Lists | Where-Object { $_.BaseTemplate -eq 101 } # 101 is the BaseTemplate ID for document libraries.
+
+$results = foreach ($docLibrary in $docLibraries) {
+    $ctx.Load($docLibrary.RootFolder.Folders)
+    $ctx.ExecuteQuery()
+    
+    foreach ($folder in $docLibrary.RootFolder.Folders) {
+        if ($folder.Name -ne "Forms") { # Exclude system folder
+            $ctx.Load($folder.ListItemAllFields.RoleAssignments)
+            $ctx.ExecuteQuery()
+            
+            foreach ($roleAssignment in $folder.ListItemAllFields.RoleAssignments) {
+                $ctx.Load($roleAssignment.Member)
+                $ctx.Load($roleAssignment.RoleDefinitionBindings)
+                $ctx.ExecuteQuery()
+                
+                [PSCustomObject]@{
+                    FolderName   = $folder.Name
+                    Permission   = ($roleAssignment.RoleDefinitionBindings | Select -ExpandProperty Name) -join ', '
+                    UserOrGroup  = $roleAssignment.Member.Title
+                }
+            }
+        }
+    }
+}
+
+# Update the path 
+$results | Export-Csv -NoTypeInformation -Path "./new folder"
